@@ -7,29 +7,29 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 class BankManagersAnalyzer {
-    constructor() {
+    constructor(inputFile) {
         this.data = [];
+        this.inputFile = inputFile;
         this.loadData();
     }
 
-    loadData() {
-        try {
-            const filePath = path.join(__dirname, 'bank_managers.json');
-            
-            if (!fs.existsSync(filePath)) {
-                console.log('❌ Файл bank_managers.json не знайдено!');
-                return;
-            }
-            
-            const rawData = fs.readFileSync(filePath, 'utf8');
-            this.data = JSON.parse(rawData);
-            console.log('✅ Дані успішно завантажено!');
-            console.log(`📊 Загальна кількість записів: ${this.data.length}`);
-        } catch (error) {
-            console.error('❌ Помилка завантаження даних:', error.message);
+   loadData() {
+    try {
+        // Перевіряємо чи файл існує
+        if (!fs.existsSync(this.inputFile)) {
+            throw new Error('Cannot find input file');
         }
+        
+        const rawData = fs.readFileSync(this.inputFile, 'utf8');
+        this.data = JSON.parse(rawData);
+        // ВИДАЛИВ console.log - НІЧОГО НЕ ВИВОДИТИ!
+    } catch (error) {
+        if (error.message === 'Cannot find input file') {
+            throw error; // Передаємо помилку далі
+        }
+        console.error('❌ Помилка завантаження даних:', error.message);
     }
-
+}
     getGeneralStats() {
         const totalManagers = this.data.length;
         const activeBanks = this.data.filter(item => item.NAME_STATE === 'Нормальний').length;
@@ -105,136 +105,147 @@ class BankManagersAnalyzer {
             .sort(([yearA], [yearB]) => yearA - yearB)
             .map(([year, count]) => ({ year: parseInt(year), count }));
     }
+
+    // НОВИЙ МЕТОД: отримати всі статистики для виводу
+    getAllStats() {
+        const stats = this.getGeneralStats();
+        const topPositions = this.getTopPositions(10);
+        const topBanks = this.getTopBanks(10);
+        const yearlyStats = this.getYearlyStats();
+
+        return {
+            generalStats: stats,
+            topPositions,
+            topBanks,
+            yearlyStats
+        };
+    }
+
+    // НОВИЙ МЕТОД: форматувати результат для виводу
+    formatStats() {
+        const allStats = this.getAllStats();
+        let result = '';
+
+        result += '📈 СТАТИСТИКА БАНКІВСЬКИХ МЕНЕДЖЕРІВ\n';
+        result += '='.repeat(50) + '\n\n';
+
+        // Загальна статистика
+        result += '📊 Загальна статистика:\n';
+        result += `   • Всього менеджерів: ${allStats.generalStats.totalManagers}\n`;
+        result += `   • Банків з нормальним статусом: ${allStats.generalStats.activeBanks}\n`;
+        result += `   • Банків у режимі ліквідації: ${allStats.generalStats.liquidatedBanks}\n`;
+        result += `   • Банків виключено з реєстру: ${allStats.generalStats.excludedBanks}\n\n`;
+
+        // Топ посад
+        result += '🏆 Топ-10 посад:\n';
+        allStats.topPositions.forEach((item, index) => {
+            result += `   ${index + 1}. ${item.position}: ${item.count}\n`;
+        });
+        result += '\n';
+
+        // Топ банків
+        result += '🏦 Топ-10 банків за кількістю менеджерів:\n';
+        allStats.topBanks.forEach((item, index) => {
+            result += `   ${index + 1}. ${item.bank}: ${item.count} менеджерів\n`;
+        });
+        result += '\n';
+
+        // Роки
+        result += '📅 Розподіл за роками призначення:\n';
+        if (allStats.yearlyStats.length > 0) {
+            allStats.yearlyStats.forEach(item => {
+                result += `   • ${item.year} рік: ${item.count} призначень\n`;
+            });
+        } else {
+            result += '   • Дані про дати відсутні\n';
+        }
+
+        return result;
+    }
 }
 
 // Створення програми Commander
 const program = new Command();
-const analyzer = new BankManagersAnalyzer();
 
 program
     .name('bank-analyzer')
     .description('CLI для аналізу даних банківських менеджерів')
-    .version('1.0.0');
+    .version('1.0.0')
+    // ДОДАЄМО СПІЛЬНІ ПАРАМЕТРИ
+    .option('-i, --input <file>', 'шлях до вхідного JSON файлу (обовʼязковий)') // ВИДАЛИВ requiredOption
+    .option('-o, --output <file>', 'шлях до файлу для запису результату')
+    .option('-d, --display', 'вивести результат у консоль');
 
-// Команда для загальної статистики
-program
-    .command('stats')
-    .description('Показати загальну статистику')
-    .action(() => {
-        if (analyzer.data.length === 0) {
-            console.log('❌ Дані не завантажені!');
-            return;
-        }
-
-        const stats = analyzer.getGeneralStats();
-        console.log('\n📈 ЗАГАЛЬНА СТАТИСТИКА');
-        console.log('='.repeat(30));
-        console.log(`👥 Всього менеджерів: ${stats.totalManagers}`);
-        console.log(`✅ Банків з нормальним статусом: ${stats.activeBanks}`);
-        console.log(`🔚 Банків у режимі ліквідації: ${stats.liquidatedBanks}`);
-        console.log(`❌ Банків виключено з реєстру: ${stats.excludedBanks}`);
-    });
-
-// Команда для топ посад
-program
-    .command('positions')
-    .description('Показати топ посад')
-    .option('-l, --limit <number>', 'кількість позицій для показу', '10')
-    .action((options) => {
-        if (analyzer.data.length === 0) {
-            console.log('❌ Дані не завантажені!');
-            return;
-        }
-
-        const limit = parseInt(options.limit);
-        const positions = analyzer.getTopPositions(limit);
-        
-        console.log(`\n🏆 ТОП-${limit} ПОСАД`);
-        console.log('='.repeat(30));
-        positions.forEach((item, index) => {
-            console.log(`${index + 1}. ${item.position}: ${item.count}`);
-        });
-    });
-
-// Команда для топ банків
-program
-    .command('banks')
-    .description('Показати топ банків')
-    .option('-l, --limit <number>', 'кількість банків для показу', '10')
-    .action((options) => {
-        if (analyzer.data.length === 0) {
-            console.log('❌ Дані не завантажені!');
-            return;
-        }
-
-        const limit = parseInt(options.limit);
-        const banks = analyzer.getTopBanks(limit);
-        
-        console.log(`\n🏦 ТОП-${limit} БАНКІВ`);
-        console.log('='.repeat(30));
-        banks.forEach((item, index) => {
-            console.log(`${index + 1}. ${item.bank}: ${item.count} менеджерів`);
-        });
-    });
-
-// Команда для пошуку за прізвищем
-program
-    .command('search <lastName>')
-    .description('Пошук менеджерів за прізвищем')
-    .action((lastName) => {
-        if (analyzer.data.length === 0) {
-            console.log('❌ Дані не завантажені!');
-            return;
-        }
-
-        const results = analyzer.findManagerByLastName(lastName);
-        
-        console.log(`\n🔍 РЕЗУЛЬТАТИ ПОШУКУ: "${lastName}"`);
-        console.log('='.repeat(40));
-        
-        if (results.length === 0) {
-            console.log('❌ Менеджерів не знайдено');
-        } else {
-            console.log(`✅ Знайдено ${results.length} менеджерів:\n`);
-            results.slice(0, 20).forEach((manager, index) => {
-                console.log(`${index + 1}. ${manager.LAST_NAME} ${manager.FIRST_NAME} ${manager.MIDDLE_NAME || ''}`);
-                console.log(`   Посада: ${manager.NAME_DOLGN}`);
-                console.log(`   Банк: ${manager.SHORTNAME}`);
-                console.log(`   Статус: ${manager.NAME_STATE}`);
-                console.log('   ──────────────────────');
-            });
-            
-            if (results.length > 20) {
-                console.log(`... і ще ${results.length - 20} результатів`);
-            }
-        }
-    });
-
-// Команда для статистики за роками
-program
-    .command('years')
-    .description('Показати статистику за роками')
-    .action(() => {
-        if (analyzer.data.length === 0) {
-            console.log('❌ Дані не завантажені!');
-            return;
-        }
-
-        const yearlyStats = analyzer.getYearlyStats();
-        
-        console.log('\n📅 СТАТИСТИКА ЗА РОКАМИ');
-        console.log('='.repeat(30));
-        
-        if (yearlyStats.length === 0) {
-            console.log('❌ Дані про дати відсутні');
-        } else {
-            yearlyStats.forEach(item => {
-                console.log(`📅 ${item.year} рік: ${item.count} призначень`);
-            });
-        }
-    });
-
-// Запуск парсингу аргументів
+// Обробка всіх команд
 program.parse();
+
+// ОТРИМУЄМО ПАРАМЕТРИ
+const options = program.opts();
+
+// ПЕРЕВІРКА ОБОВ'ЯЗКОВОГО ПАРАМЕТРА 
+if (!options.input) {
+    console.error('❌ Помилка: Please, specify input file');
+    process.exit(1);
+}
+
+// СПРОБУЄМО ЗАВАНТАЖИТИ ДАНІ
+try {
+    const analyzer = new BankManagersAnalyzer(options.input);
+    
+    // Якщо дані не завантажились - виходимо
+    if (analyzer.data.length === 0) {
+        console.error('❌ Не вдалося завантажити дані для аналізу');
+        process.exit(1);
+    }
+
+    // ОТРИМУЄМО РЕЗУЛЬТАТ
+    const result = analyzer.formatStats();
+
+    // ЛОГІКА ВИВОДУ ЗА ВИМОГАМИ ЛАБИ
+    const shouldDisplay = options.display; // чи виводити в консоль
+    const outputFile = options.output;     // чи записувати в файл
+
+    // ВАРІАНТ 1: Не задано жодного з необов'язкових параметрів - нічого не робимо
+    if (!shouldDisplay && !outputFile) {
+        // Нічого не виводимо - просто виходимо
+        process.exit(0);
+    }
+
+    // ВАРІАНТ 2: Задано тільки -d (display) - виводимо в консоль
+    if (shouldDisplay && !outputFile) {
+        console.log(result);
+    }
+
+    // ВАРІАНТ 3: Задано тільки -o (output) - записуємо в файл
+    if (!shouldDisplay && outputFile) {
+        try {
+            fs.writeFileSync(outputFile, result, 'utf8');
+            console.log(`✅ Результат записано у файл: ${outputFile}`);
+        } catch (error) {
+            console.error('❌ Помилка запису у файл:', error.message);
+        }
+    }
+
+    // ВАРІАНТ 4: Задано і -d і -o - виводимо і в консоль і в файл
+    if (shouldDisplay && outputFile) {
+        console.log(result); // Вивід в консоль
+        
+        try {
+            fs.writeFileSync(outputFile, result, 'utf8'); // Запис в файл
+            console.log(`✅ Результат також записано у файл: ${outputFile}`);
+        } catch (error) {
+            console.error('❌ Помилка запису у файл:', error.message);
+        }
+    }
+
+} catch (error) {
+    if (error.message === 'Cannot find input file') {
+        console.error('❌ Помилка: Cannot find input file');
+        process.exit(1);
+    } else {
+        console.error('❌ Неочікувана помилка:', error.message);
+        process.exit(1);
+    }
+}
 
 export default BankManagersAnalyzer;
