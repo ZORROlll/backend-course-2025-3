@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Command } from 'commander';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,14 +12,12 @@ class BankManagersAnalyzer {
         this.loadData();
     }
 
-    // Завантаження даних з JSON файлу
     loadData() {
         try {
             const filePath = path.join(__dirname, 'bank_managers.json');
             
             if (!fs.existsSync(filePath)) {
                 console.log('❌ Файл bank_managers.json не знайдено!');
-                console.log('❌ Переконайтеся, що файл знаходиться в папці:', __dirname);
                 return;
             }
             
@@ -31,7 +30,6 @@ class BankManagersAnalyzer {
         }
     }
 
-    // Загальна статистика
     getGeneralStats() {
         const totalManagers = this.data.length;
         const activeBanks = this.data.filter(item => item.NAME_STATE === 'Нормальний').length;
@@ -46,7 +44,6 @@ class BankManagersAnalyzer {
         };
     }
 
-    // Топ посади
     getTopPositions(limit = 10) {
         const positions = {};
         
@@ -61,7 +58,6 @@ class BankManagersAnalyzer {
             .map(([position, count]) => ({ position, count }));
     }
 
-    // Топ банки за кількістю менеджерів
     getTopBanks(limit = 10) {
         const banks = {};
         
@@ -76,7 +72,6 @@ class BankManagersAnalyzer {
             .map(([bank, count]) => ({ bank, count }));
     }
 
-    // Пошук менеджерів за прізвищем
     findManagerByLastName(lastName) {
         if (!lastName || typeof lastName !== 'string') {
             console.log('❌ Будь ласка, введіть коректне прізвище для пошуку');
@@ -89,7 +84,6 @@ class BankManagersAnalyzer {
         );
     }
 
-    // Аналіз за роками
     getYearlyStats() {
         const yearly = {};
         
@@ -111,97 +105,136 @@ class BankManagersAnalyzer {
             .sort(([yearA], [yearB]) => yearA - yearB)
             .map(([year, count]) => ({ year: parseInt(year), count }));
     }
+}
 
-    // Статистика за статусами банків
-    getBankStatusStats() {
-        const statuses = {};
-        
-        this.data.forEach(manager => {
-            const status = manager.NAME_STATE || 'Не вказано';
-            statuses[status] = (statuses[status] || 0) + 1;
-        });
+// Створення програми Commander
+const program = new Command();
+const analyzer = new BankManagersAnalyzer();
 
-        return Object.entries(statuses)
-            .sort((a, b) => b[1] - a[1])
-            .map(([status, count]) => ({ status, count }));
-    }
+program
+    .name('bank-analyzer')
+    .description('CLI для аналізу даних банківських менеджерів')
+    .version('1.0.0');
 
-    // Вивід статистики
-    printStats() {
-        console.log('\n📈 СТАТИСТИКА БАНКІВСЬКИХ МЕНЕДЖЕРІВ');
-        console.log('='.repeat(50));
-
-        const stats = this.getGeneralStats();
-        console.log(`\n📊 Загальна статистика:`);
-        console.log(`   • Всього менеджерів: ${stats.totalManagers}`);
-        console.log(`   • Банків з нормальним статусом: ${stats.activeBanks}`);
-        console.log(`   • Банків у режимі ліквідації: ${stats.liquidatedBanks}`);
-        console.log(`   • Банків виключено з реєстру: ${stats.excludedBanks}`);
-
-        console.log(`\n🏆 Топ-10 посад:`);
-        const topPositions = this.getTopPositions(10);
-        topPositions.forEach((item, index) => {
-            console.log(`   ${index + 1}. ${item.position}: ${item.count}`);
-        });
-
-        console.log(`\n🏦 Топ-10 банків за кількістю менеджерів:`);
-        const topBanks = this.getTopBanks(10);
-        topBanks.forEach((item, index) => {
-            console.log(`   ${index + 1}. ${item.bank}: ${item.count} менеджерів`);
-        });
-
-        console.log(`\n📅 Розподіл за роками призначення:`);
-        const yearlyStats = this.getYearlyStats();
-        if (yearlyStats.length > 0) {
-            yearlyStats.forEach(item => {
-                console.log(`   • ${item.year} рік: ${item.count} призначень`);
-            });
-        } else {
-            console.log(`   • Дані про дати відсутні`);
+// Команда для загальної статистики
+program
+    .command('stats')
+    .description('Показати загальну статистику')
+    .action(() => {
+        if (analyzer.data.length === 0) {
+            console.log('❌ Дані не завантажені!');
+            return;
         }
 
-        console.log(`\n🏛️ Статуси банків:`);
-        const statusStats = this.getBankStatusStats();
-        statusStats.forEach((item, index) => {
-            console.log(`   ${index + 1}. ${item.status}: ${item.count}`);
+        const stats = analyzer.getGeneralStats();
+        console.log('\n📈 ЗАГАЛЬНА СТАТИСТИКА');
+        console.log('='.repeat(30));
+        console.log(`👥 Всього менеджерів: ${stats.totalManagers}`);
+        console.log(`✅ Банків з нормальним статусом: ${stats.activeBanks}`);
+        console.log(`🔚 Банків у режимі ліквідації: ${stats.liquidatedBanks}`);
+        console.log(`❌ Банків виключено з реєстру: ${stats.excludedBanks}`);
+    });
+
+// Команда для топ посад
+program
+    .command('positions')
+    .description('Показати топ посад')
+    .option('-l, --limit <number>', 'кількість позицій для показу', '10')
+    .action((options) => {
+        if (analyzer.data.length === 0) {
+            console.log('❌ Дані не завантажені!');
+            return;
+        }
+
+        const limit = parseInt(options.limit);
+        const positions = analyzer.getTopPositions(limit);
+        
+        console.log(`\n🏆 ТОП-${limit} ПОСАД`);
+        console.log('='.repeat(30));
+        positions.forEach((item, index) => {
+            console.log(`${index + 1}. ${item.position}: ${item.count}`);
         });
-    }
-}
+    });
 
-// Головна функція
-function main() {
-    console.log('🚀 Запуск аналізу банківських менеджерів...\n');
-    
-    const analyzer = new BankManagersAnalyzer();
-    
-    if (analyzer.data.length === 0) {
-        console.log('❌ Не вдалося завантажити дані для аналізу');
-        console.log('❌ Переконайтеся, що файл bank_managers.json знаходиться в тій самій папці');
-        return;
-    }
+// Команда для топ банків
+program
+    .command('banks')
+    .description('Показати топ банків')
+    .option('-l, --limit <number>', 'кількість банків для показу', '10')
+    .action((options) => {
+        if (analyzer.data.length === 0) {
+            console.log('❌ Дані не завантажені!');
+            return;
+        }
 
-    // Вивід статистики
-    analyzer.printStats();
-
-    // Демонстрація пошуку
-    console.log('\n🔍 Демонстрація пошуку:');
-    const sampleSearch = analyzer.findManagerByLastName('Іван');
-    if (sampleSearch.length > 0) {
-        console.log(`   • Знайдено ${sampleSearch.length} менеджерів з прізвищем, що містить "Іван"`);
-        console.log('   • Приклад:');
-        sampleSearch.slice(0, 3).forEach((manager, idx) => {
-            console.log(`     ${idx + 1}. ${manager.LAST_NAME} ${manager.FIRST_NAME} - ${manager.NAME_DOLGN}`);
+        const limit = parseInt(options.limit);
+        const banks = analyzer.getTopBanks(limit);
+        
+        console.log(`\n🏦 ТОП-${limit} БАНКІВ`);
+        console.log('='.repeat(30));
+        banks.forEach((item, index) => {
+            console.log(`${index + 1}. ${item.bank}: ${item.count} менеджерів`);
         });
-    }
+    });
 
-    console.log('\n💡 Корисні команди для подальшого аналізу:');
-    console.log('   • analyzer.findManagerByLastName("Прізвище")');
-    console.log('   • analyzer.getTopPositions(5)');
-    console.log('   • analyzer.getTopBanks(5)');
-    console.log('   • analyzer.getYearlyStats()');
-}
+// Команда для пошуку за прізвищем
+program
+    .command('search <lastName>')
+    .description('Пошук менеджерів за прізвищем')
+    .action((lastName) => {
+        if (analyzer.data.length === 0) {
+            console.log('❌ Дані не завантажені!');
+            return;
+        }
 
-// Запуск програми
-main();
+        const results = analyzer.findManagerByLastName(lastName);
+        
+        console.log(`\n🔍 РЕЗУЛЬТАТИ ПОШУКУ: "${lastName}"`);
+        console.log('='.repeat(40));
+        
+        if (results.length === 0) {
+            console.log('❌ Менеджерів не знайдено');
+        } else {
+            console.log(`✅ Знайдено ${results.length} менеджерів:\n`);
+            results.slice(0, 20).forEach((manager, index) => {
+                console.log(`${index + 1}. ${manager.LAST_NAME} ${manager.FIRST_NAME} ${manager.MIDDLE_NAME || ''}`);
+                console.log(`   Посада: ${manager.NAME_DOLGN}`);
+                console.log(`   Банк: ${manager.SHORTNAME}`);
+                console.log(`   Статус: ${manager.NAME_STATE}`);
+                console.log('   ──────────────────────');
+            });
+            
+            if (results.length > 20) {
+                console.log(`... і ще ${results.length - 20} результатів`);
+            }
+        }
+    });
+
+// Команда для статистики за роками
+program
+    .command('years')
+    .description('Показати статистику за роками')
+    .action(() => {
+        if (analyzer.data.length === 0) {
+            console.log('❌ Дані не завантажені!');
+            return;
+        }
+
+        const yearlyStats = analyzer.getYearlyStats();
+        
+        console.log('\n📅 СТАТИСТИКА ЗА РОКАМИ');
+        console.log('='.repeat(30));
+        
+        if (yearlyStats.length === 0) {
+            console.log('❌ Дані про дати відсутні');
+        } else {
+            yearlyStats.forEach(item => {
+                console.log(`📅 ${item.year} рік: ${item.count} призначень`);
+            });
+        }
+    });
+
+// Запуск парсингу аргументів
+program.parse();
 
 export default BankManagersAnalyzer;
