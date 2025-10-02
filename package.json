@@ -1,0 +1,24 @@
+{
+  "name": "bank-managers-analyzer",
+  "version": "1.0.0",
+  "description": "Аналіз даних банківських менеджерів України",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "analyze": "node index.js"
+  },
+  "keywords": [
+    "bank",
+    "managers",
+    "analyzer",
+    "ukraine",
+    "statistics"
+  ],
+  "author": "Ваше Ім'я",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
