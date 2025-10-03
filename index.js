@@ -12,29 +12,65 @@ class BankManagersAnalyzer {
         this.inputFile = inputFile;
         this.loadData();
     }
-
-   loadData() {
-    try {
-        // Перевіряємо чи файл існує
-        if (!fs.existsSync(this.inputFile)) {
-            throw new Error('Cannot find input file');
+    
+    loadData() {
+        try {
+            if (!fs.existsSync(this.inputFile)) {
+                throw new Error('Cannot find input file');
+            }
+            
+            const rawData = fs.readFileSync(this.inputFile, 'utf8');
+            this.data = JSON.parse(rawData);
+        } catch (error) {
+            if (error.message === 'Cannot find input file') {
+                throw error;
+            }
+            console.error('❌ Помилка завантаження даних:', error.message);
         }
-        
-        const rawData = fs.readFileSync(this.inputFile, 'utf8');
-        this.data = JSON.parse(rawData);
-        // ВИДАЛИВ console.log - НІЧОГО НЕ ВИВОДИТИ!
-    } catch (error) {
-        if (error.message === 'Cannot find input file') {
-            throw error; // Передаємо помилку далі
-        }
-        console.error('❌ Помилка завантаження даних:', error.message);
     }
-}
+
+    // НОВІ МЕТОДИ ДЛЯ ГНУЧКОСТІ
+    getMFO(manager) {
+        return manager.MFO || manager.mfo || manager.bank_code || '';
+    }
+
+    isNormalBank(manager) {
+        const codState = manager.COD_STATE || manager.state_code;
+        const nameState = manager.NAME_STATE || manager.state_name;
+        
+        return codState === 1 || 
+               nameState === 'Нормальний' || 
+               nameState === 'Normal' ||
+               nameState === 'Активний';
+    }
+
+    getFullName(manager) {
+        const lastName = manager.LAST_NAME || manager.last_name || manager.surname || '';
+        const firstName = manager.FIRST_NAME || manager.first_name || manager.name || '';
+        const middleName = manager.MIDDLE_NAME || manager.middle_name || '';
+        
+        return `${lastName} ${firstName} ${middleName}`.trim();
+    }
+
+    getPosition(manager) {
+        return manager.NAME_DOLGN || manager.position || manager.dolgn || 'Посада не вказана';
+    }
+
+    getBankName(manager) {
+        return manager.SHORTNAME || manager.bank_name || manager.bank || 'Банк не вказаний';
+    }
+
     getGeneralStats() {
         const totalManagers = this.data.length;
-        const activeBanks = this.data.filter(item => item.NAME_STATE === 'Нормальний').length;
-        const liquidatedBanks = this.data.filter(item => item.NAME_STATE === 'Режим ліквідації').length;
-        const excludedBanks = this.data.filter(item => item.NAME_STATE && item.NAME_STATE.includes('Виключено')).length;
+        const activeBanks = this.data.filter(item => this.isNormalBank(item)).length;
+        const liquidatedBanks = this.data.filter(item => 
+            item.NAME_STATE === 'Режим ліквідації' || 
+            item.state_name === 'Режим ліквідації'
+        ).length;
+        const excludedBanks = this.data.filter(item => 
+            (item.NAME_STATE && item.NAME_STATE.includes('Виключено')) ||
+            (item.state_name && item.state_name.includes('Виключено'))
+        ).length;
 
         return {
             totalManagers,
@@ -48,7 +84,7 @@ class BankManagersAnalyzer {
         const positions = {};
         
         this.data.forEach(manager => {
-            const position = manager.NAME_DOLGN || 'Не вказано';
+            const position = this.getPosition(manager);
             positions[position] = (positions[position] || 0) + 1;
         });
 
@@ -62,7 +98,7 @@ class BankManagersAnalyzer {
         const banks = {};
         
         this.data.forEach(manager => {
-            const bank = manager.SHORTNAME || 'Не вказано';
+            const bank = this.getBankName(manager);
             banks[bank] = (banks[bank] || 0) + 1;
         });
 
@@ -78,19 +114,20 @@ class BankManagersAnalyzer {
             return [];
         }
         
-        return this.data.filter(manager => 
-            manager.LAST_NAME && 
-            manager.LAST_NAME.toLowerCase().includes(lastName.toLowerCase())
-        );
+        return this.data.filter(manager => {
+            const managerLastName = manager.LAST_NAME || manager.last_name || manager.surname || '';
+            return managerLastName.toLowerCase().includes(lastName.toLowerCase());
+        });
     }
 
     getYearlyStats() {
         const yearly = {};
         
         this.data.forEach(manager => {
-            if (manager.DATE_BANK) {
+            const dateField = manager.DATE_BANK || manager.date_bank || manager.date;
+            if (dateField) {
                 try {
-                    const date = new Date(manager.DATE_BANK);
+                    const date = new Date(dateField);
                     if (!isNaN(date.getTime())) {
                         const year = date.getFullYear();
                         yearly[year] = (yearly[year] || 0) + 1;
@@ -106,7 +143,6 @@ class BankManagersAnalyzer {
             .map(([year, count]) => ({ year: parseInt(year), count }));
     }
 
-    // НОВИЙ МЕТОД: отримати всі статистики для виводу
     getAllStats() {
         const stats = this.getGeneralStats();
         const topPositions = this.getTopPositions(10);
@@ -121,44 +157,52 @@ class BankManagersAnalyzer {
         };
     }
 
-    // НОВИЙ МЕТОД: форматувати результат для виводу
-    formatStats() {
-        const allStats = this.getAllStats();
+    // ОНОВЛЕНИЙ МЕТОД ДЛЯ ЧАСТИНИ 2
+    formatStats(options = {}) {
         let result = '';
+        
+        // Фільтруємо дані за параметром -n
+        let filteredData = this.data;
+        if (options.normal) {
+            filteredData = this.data.filter(manager => this.isNormalBank(manager));
+        }
 
-        result += '📈 СТАТИСТИКА БАНКІВСЬКИХ МЕНЕДЖЕРІВ\n';
+        // Групуємо менеджерів по банках
+        const banks = {};
+        
+        filteredData.forEach(manager => {
+            const bankKey = this.getBankName(manager);
+            const mfo = this.getMFO(manager);
+            
+            if (!banks[bankKey]) {
+                banks[bankKey] = {
+                    mfo: mfo,
+                    managers: []
+                };
+            }
+            
+            banks[bankKey].managers.push(manager);
+        });
+
+        // Форматуємо вивід
+        result += '📈 СПИСОК БАНКІВ ТА МЕНЕДЖЕРІВ\n';
         result += '='.repeat(50) + '\n\n';
 
-        // Загальна статистика
-        result += '📊 Загальна статистика:\n';
-        result += `   • Всього менеджерів: ${allStats.generalStats.totalManagers}\n`;
-        result += `   • Банків з нормальним статусом: ${allStats.generalStats.activeBanks}\n`;
-        result += `   • Банків у режимі ліквідації: ${allStats.generalStats.liquidatedBanks}\n`;
-        result += `   • Банків виключено з реєстру: ${allStats.generalStats.excludedBanks}\n\n`;
-
-        // Топ посад
-        result += '🏆 Топ-10 посад:\n';
-        allStats.topPositions.forEach((item, index) => {
-            result += `   ${index + 1}. ${item.position}: ${item.count}\n`;
-        });
-        result += '\n';
-
-        // Топ банків
-        result += '🏦 Топ-10 банків за кількістю менеджерів:\n';
-        allStats.topBanks.forEach((item, index) => {
-            result += `   ${index + 1}. ${item.bank}: ${item.count} менеджерів\n`;
-        });
-        result += '\n';
-
-        // Роки
-        result += '📅 Розподіл за роками призначення:\n';
-        if (allStats.yearlyStats.length > 0) {
-            allStats.yearlyStats.forEach(item => {
-                result += `   • ${item.year} рік: ${item.count} призначень\n`;
+        Object.entries(banks).forEach(([bankName, bankData]) => {
+            // Додаємо МФО якщо вказано параметр -m
+            if (options.mfo && bankData.mfo) {
+                result += `${bankData.mfo} `;
+            }
+            result += `${bankName}\n`;
+            
+            // Виводимо менеджерів цього банку
+            bankData.managers.forEach(manager => {
+                result += `  • ${this.getFullName(manager)}`;
+                result += ` - ${this.getPosition(manager)}\n`;
             });
-        } else {
-            result += '   • Дані про дати відсутні\n';
-        }
+            
+            result += '\n';
+        });
 
         return result;
     }
@@ -171,10 +215,11 @@ program
     .name('bank-analyzer')
     .description('CLI для аналізу даних банківських менеджерів')
     .version('1.0.0')
-    // ДОДАЄМО СПІЛЬНІ ПАРАМЕТРИ
-    .option('-i, --input <file>', 'шлях до вхідного JSON файлу (обовʼязковий)') // ВИДАЛИВ requiredOption
+    .option('-i, --input <file>', 'шлях до вхідного JSON файлу (обовʼязковий)')
     .option('-o, --output <file>', 'шлях до файлу для запису результату')
-    .option('-d, --display', 'вивести результат у консоль');
+    .option('-d, --display', 'вивести результат у консоль')
+    .option('-m, --mfo', 'відображати код МФО банку перед назвою')
+    .option('-n, --normal', 'відображати лише працюючі банки зі статусом "Нормальний"');
 
 // Обробка всіх команд
 program.parse();
@@ -192,31 +237,29 @@ if (!options.input) {
 try {
     const analyzer = new BankManagersAnalyzer(options.input);
     
-    // Якщо дані не завантажились - виходимо
     if (analyzer.data.length === 0) {
         console.error('❌ Не вдалося завантажити дані для аналізу');
         process.exit(1);
     }
 
-    // ОТРИМУЄМО РЕЗУЛЬТАТ
-    const result = analyzer.formatStats();
+    // ВИКОРИСТОВУЄМО НОВИЙ МЕТОД З ПАРАМЕТРАМИ
+    const result = analyzer.formatStats({
+        mfo: options.mfo,
+        normal: options.normal
+    });
 
-    // ЛОГІКА ВИВОДУ ЗА ВИМОГАМИ ЛАБИ
-    const shouldDisplay = options.display; // чи виводити в консоль
-    const outputFile = options.output;     // чи записувати в файл
+    // ЛОГІКА ВИВОДУ
+    const shouldDisplay = options.display;
+    const outputFile = options.output;
 
-    // ВАРІАНТ 1: Не задано жодного з необов'язкових параметрів - нічого не робимо
     if (!shouldDisplay && !outputFile) {
-        // Нічого не виводимо - просто виходимо
         process.exit(0);
     }
 
-    // ВАРІАНТ 2: Задано тільки -d (display) - виводимо в консоль
     if (shouldDisplay && !outputFile) {
         console.log(result);
     }
 
-    // ВАРІАНТ 3: Задано тільки -o (output) - записуємо в файл
     if (!shouldDisplay && outputFile) {
         try {
             fs.writeFileSync(outputFile, result, 'utf8');
@@ -226,12 +269,10 @@ try {
         }
     }
 
-    // ВАРІАНТ 4: Задано і -d і -o - виводимо і в консоль і в файл
     if (shouldDisplay && outputFile) {
-        console.log(result); // Вивід в консоль
-        
+        console.log(result);
         try {
-            fs.writeFileSync(outputFile, result, 'utf8'); // Запис в файл
+            fs.writeFileSync(outputFile, result, 'utf8');
             console.log(`✅ Результат також записано у файл: ${outputFile}`);
         } catch (error) {
             console.error('❌ Помилка запису у файл:', error.message);
